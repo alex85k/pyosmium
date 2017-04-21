@@ -36,14 +36,35 @@ def get_versions():
 pyosmium_release, libosmium_version = get_versions()
 
 ## boost dependencies
-includes.append(os.path.join(os.environ.get('BOOST_PREFIX', '/usr'), 'include'))
-if 'BOOST_PREFIX' in os.environ:
-    libdirs.append(os.path.join(os.environ['BOOST_PREFIX'], 'lib'))
+boost_ver = os.environ.get('BOOST_VERSION', '1_63')
+
+
+
+if osplatform == "win32" :
+    add_prefix = os.environ.get('LIBS_PREFIX', 'd:/libs2015r')
+    boost_prefix = os.environ.get('BOOST_PREFIX', 'd:/boost')
+else:
+    add_prefix = os.environ.get('LIBS_PREFIX', '')
+    boost_prefix = os.environ.get('BOOST_PREFIX', '/usr')
+
+for prefix in add_prefix.split(";"):
+    includes.append(prefix + '/include')
+    libdirs.append(prefix + '/lib')
+
+includes.append(boost_prefix + '/include')
+includes.append(boost_prefix + '/include/boost-%s' % boost_ver)
+
+if 'BOOST_PREFIX' in os.environ or osplatform == "win32":
+    libdirs.append(boost_prefix+'/lib')
 elif osplatform in ["linux", "linux2"]:
     libdirs.append('/usr/lib/x86_64-linux-gnu/')
+print(libdirs)
 
+if osplatform == "win32" :
+    libs.append("boost_python3-vc140-mt-%s" % boost_ver)
+else:
 # try to find the boost library matching the python version
-suffixes = [ # Debian naming convention for version installed in parallel
+    suffixes = [ # Debian naming convention for version installed in parallel
              "-py%d%d" % (pyversion.major, pyversion.minor),
              # Gentoo naming convention for version installed in parallel
              "-%d.%d" % (pyversion.major, pyversion.minor),
@@ -54,13 +75,15 @@ suffixes = [ # Debian naming convention for version installed in parallel
              # former naming schema?
              "-mt"
            ]
-for suf in suffixes:
-    lib = find_library("boost_python%s" % suf)
-    if lib is not None:
-        libs.append("boost_python%s" % suf)
+    for suf in suffixes:
+        print("finding boost_python%s" % suf )
+        lib = find_library("boost_python%s" % suf)
+        print(lib)
+        if lib is not None:
+           libs.append("boost_python%s" % suf)
         break
-else:
-    raise Exception("Cannot find boost_python library")
+    else:
+        raise Exception("Cannot find boost_python library")
 
 
 orig_compiler = setuptools_build_ext.customize_compiler
@@ -79,7 +102,8 @@ def cpp_compiler(compiler):
         pass
     return retval
 
-setuptools_build_ext.customize_compiler = cpp_compiler
+if osplatform != "win32" :
+    setuptools_build_ext.customize_compiler = cpp_compiler
 
 ### osmium dependencies
 osmium_prefixes = [ 'libosmium-' + libosmium_version, '../libosmium' ]
@@ -99,11 +123,17 @@ else:
     else:
         print("Using global libosmium.")
 
-osmium_libs = ('expat', 'pthread', 'z', 'bz2')
+if osplatform == "win32" :
+    osmium_libs = ('expat', 'zlib', 'bzip2', 'ws2_32')
+    extra_compile_args = [ '-DWIN32_LEAN_AND_MEAN', '-D_CRT_SECURE_NO_WARNINGS', '-DNOMINMAX', '/wd4996'
+    ]
+else:
+    osmium_libs = ('expat', 'pthread', 'z', 'bz2')
+    extra_compile_args = [ '-std=c++11', '-D_LARGEFILE_SOURCE', '-D_FILE_OFFSET_BITS=64', '-D__STDC_FORMAT_MACROS' ]
+
 libs.extend(osmium_libs)
 
 extensions = []
-extra_compile_args = [ '-std=c++11', '-D_LARGEFILE_SOURCE', '-D_FILE_OFFSET_BITS=64', '-D__STDC_FORMAT_MACROS' ]
 
 extensions.append(Extension('osmium._osmium',
        sources = ['lib/osmium.cc'],
